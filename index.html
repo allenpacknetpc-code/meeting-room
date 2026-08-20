@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>會議室預約系統</title>
-    <!-- Tailwind CSS CDN -->
+    <title>會議室預約系統 (雲端同步版)</title>
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
@@ -12,7 +12,7 @@
 </head>
 <body class="bg-slate-100 min-h-screen text-slate-800 pb-10">
 
-    <!-- 頂部列：系統名稱與登入狀態 -->
+    <!-- 頂部列 -->
     <header class="bg-indigo-600 text-white p-4 shadow-md sticky top-0 z-20 flex justify-between items-center">
         <div>
             <h1 class="text-lg font-bold">會議室預約系統</h1>
@@ -35,32 +35,27 @@
             </div>
         </div>
 
-        <!-- 會議室分頁 (Tab) -->
+        <!-- 會議室分頁 -->
         <div class="flex space-x-2 overflow-x-auto pb-3 scrollbar-none" id="roomTabs">
-            <!-- 動態渲染分頁 -->
+            <div class="text-xs text-slate-400 p-2">載入會議室中...</div>
         </div>
 
         <!-- 月曆視圖區塊 -->
         <div class="bg-white rounded-2xl shadow-sm p-4 border border-slate-200 mb-4">
-            <!-- 年月切換 -->
             <div class="flex justify-between items-center mb-3">
                 <button onclick="changeMonth(-1)" class="p-1.5 text-slate-500 hover:bg-slate-100 rounded-lg">◀</button>
                 <h2 id="calendarMonthYear" class="font-bold text-slate-700 text-sm"></h2>
                 <button onclick="changeMonth(1)" class="p-1.5 text-slate-500 hover:bg-slate-100 rounded-lg">▶</button>
             </div>
 
-            <!-- 星期標頭 -->
             <div class="grid grid-cols-7 text-center text-xs font-bold text-slate-400 mb-1">
                 <div>日</div><div>一</div><div>二</div><div>三</div><div>四</div><div>五</div><div>六</div>
             </div>
 
-            <!-- 日期網格 -->
-            <div id="calendarDays" class="grid grid-cols-7 gap-1 text-center text-xs">
-                <!-- 動態渲染日期 -->
-            </div>
+            <div id="calendarDays" class="grid grid-cols-7 gap-1 text-center text-xs"></div>
         </div>
 
-        <!-- 選擇日期的預約清單 -->
+        <!-- 當日預約清單 -->
         <div class="bg-white rounded-2xl shadow-sm p-4 border border-slate-200">
             <div class="flex justify-between items-center mb-3">
                 <div>
@@ -72,9 +67,7 @@
                 </button>
             </div>
 
-            <div id="bookingList" class="space-y-2">
-                <!-- 預約卡片由 JS 動態渲染 -->
-            </div>
+            <div id="bookingList" class="space-y-2"></div>
         </div>
     </main>
 
@@ -126,9 +119,7 @@
                 <input type="text" id="newRoomName" placeholder="新會議室名稱" class="flex-1 border rounded-lg p-2 text-sm outline-none">
                 <button onclick="handleAddRoom()" class="bg-indigo-600 text-white px-3 py-2 rounded-lg text-sm font-medium">新增</button>
             </div>
-            <div id="roomList" class="max-h-48 overflow-y-auto space-y-2 border-t pt-2">
-                <!-- 會議室列表動態渲染 -->
-            </div>
+            <div id="roomList" class="max-h-48 overflow-y-auto space-y-2 border-t pt-2"></div>
             <button onclick="closeModal('roomMgmtModal')" class="w-full bg-slate-100 text-slate-600 py-2 rounded-lg text-sm font-medium mt-4">關閉</button>
         </div>
     </div>
@@ -141,48 +132,202 @@
                 <input type="text" id="newUserName" placeholder="新使用者姓名" class="flex-1 border rounded-lg p-2 text-sm outline-none">
                 <button onclick="handleAddUser()" class="bg-indigo-600 text-white px-3 py-2 rounded-lg text-sm font-medium">新增</button>
             </div>
-            <div id="userList" class="max-h-40 overflow-y-auto space-y-1.5 border-t pt-2">
-                <!-- 使用者列表 -->
-            </div>
+            <div id="userList" class="max-h-40 overflow-y-auto space-y-1.5 border-t pt-2"></div>
             <button onclick="closeModal('userMgmtModal')" class="w-full bg-slate-100 text-slate-600 py-2 rounded-lg text-sm font-medium mt-4">關閉</button>
         </div>
     </div>
 
-    <script>
-        // 預設資料初始化
-        const defaultRooms = ["會議室 A", "會議室 B", "會議室 C"];
-        const defaultUsers = [
-            { name: "admin", role: "admin" },
-            { name: "王小明", role: "user" },
-            { name: "陳大天", role: "user" }
-        ];
+    <!-- Firebase SDK (v9/v10 Modular via CDN) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { 
+            getFirestore, doc, setDoc, getDoc, onSnapshot, collection, addDoc, updateDoc, deleteDoc 
+        } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-        // State 管理
-        let rooms = JSON.parse(localStorage.getItem('rooms')) || defaultRooms;
-        let users = JSON.parse(localStorage.getItem('users')) || defaultUsers;
-        let bookings = JSON.parse(localStorage.getItem('bookings')) || [];
-        let currentUser = JSON.parse(localStorage.getItem('currentUser')) || null;
-        let activeRoom = rooms[0] || "";
-        
-        let currentDate = new Date();
-        let selectedDateStr = new Date().toISOString().split('T')[0];
+        // ⚠️ 請替換為您的 Firebase 專案設定值
+        const firebaseConfig = {
+  apiKey: "AIzaSyAXRJdvnXGB7r2RDG4CritcdvwzlEV8vsY",
+  authDomain: "meeting-room-app-f612c.firebaseapp.com",
+  projectId: "meeting-room-app-f612c",
+  storageBucket: "meeting-room-app-f612c.firebasestorage.app",
+  messagingSenderId: "489355063581",
+  appId: "1:489355063581:web:494f92df92d7b957a2f1f4",
+  measurementId: "G-HSYCNM362W"
+};
 
-        window.onload = () => {
-            saveData();
+        // 初始化 Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // 全域變數
+        window.rooms = [];
+        window.users = [];
+        window.bookings = [];
+        window.currentUser = JSON.parse(localStorage.getItem('currentUser')) || null;
+        window.activeRoom = "";
+        window.currentDate = new Date();
+        window.selectedDateStr = new Date().toISOString().split('T')[0];
+
+        // 雲端資料監聽（即時同步核心）
+        window.addEventListener('DOMContentLoaded', () => {
+            initSystemData();
+            listenToData();
             updateAuthUI();
-            renderTabs();
-            renderCalendar();
-            renderBookingList();
-        };
+        });
 
-        function saveData() {
-            localStorage.setItem('rooms', JSON.stringify(rooms));
-            localStorage.setItem('users', JSON.stringify(users));
-            localStorage.setItem('bookings', JSON.stringify(bookings));
-            localStorage.setItem('currentUser', JSON.stringify(currentUser));
+        // 初始化預設資料（若雲端完全沒資料時）
+        async function initSystemData() {
+            const configRef = doc(db, "system", "config");
+            const configSnap = await getDoc(configRef);
+            if (!configSnap.exists()) {
+                await setDoc(configRef, {
+                    rooms: ["會議室 A", "會議室 B", "會議室 C"],
+                    users: [
+                        { name: "admin", role: "admin" },
+                        { name: "王小明", role: "user" },
+                        { name: "陳大天", role: "user" }
+                    ]
+                });
+            }
         }
 
-        // Auth 邏輯
+        // 即時聽取雲端資料變更
+        function listenToData() {
+            // 聽取系統設定 (會議室/使用者)
+            onSnapshot(doc(db, "system", "config"), (docSnap) => {
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    window.rooms = data.rooms || [];
+                    window.users = data.users || [];
+                    if (!window.rooms.includes(window.activeRoom)) {
+                        window.activeRoom = window.rooms[0] || "";
+                    }
+                    renderTabs();
+                    renderUserList();
+                    renderRoomList();
+                    renderCalendar();
+                    renderBookingList();
+                }
+            });
+
+            // 即時聽取預約列表
+            onSnapshot(collection(db, "bookings"), (snapshot) => {
+                window.bookings = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderCalendar();
+                renderBookingList();
+            });
+        }
+
+        // 全域掛載 Firebase 操作 Function
+        window.saveSystemConfig = async () => {
+            await setDoc(doc(db, "system", "config"), {
+                rooms: window.rooms,
+                users: window.users
+            });
+        };
+
+        window.handleBookingSubmit = async (e) => {
+            e.preventDefault();
+            const id = document.getElementById('bookingId').value;
+            const title = document.getElementById('meetingTitle').value;
+            const startTime = document.getElementById('startTime').value;
+            const endTime = document.getElementById('endTime').value;
+
+            if (startTime >= endTime) {
+                alert("結束時間必須晚於開始時間！");
+                return;
+            }
+
+            const isConflict = window.bookings.some(b => {
+                if (b.room !== window.activeRoom || b.date !== window.selectedDateStr) return false;
+                if (id && b.id === id) return false;
+                return (startTime < b.endTime) && (endTime > b.startTime);
+            });
+
+            if (isConflict) {
+                alert("⚠️ 預約失敗：該時段與現有預約重疊！");
+                return;
+            }
+
+            const bookingData = {
+                room: window.activeRoom,
+                date: window.selectedDateStr,
+                title,
+                user: window.currentUser.name,
+                startTime,
+                endTime
+            };
+
+            if (id) {
+                await updateDoc(doc(db, "bookings", id), bookingData);
+            } else {
+                await addDoc(collection(db, "bookings"), bookingData);
+            }
+
+            closeModal('bookingModal');
+        };
+
+        window.deleteBooking = async (id) => {
+            if (confirm("確定要刪除這筆預約嗎？")) {
+                await deleteDoc(doc(db, "bookings", id));
+            }
+        };
+
+        window.handleAddRoom = async () => {
+            const roomName = document.getElementById('newRoomName').value.trim();
+            if (roomName && !window.rooms.includes(roomName)) {
+                window.rooms.push(roomName);
+                await window.saveSystemConfig();
+                document.getElementById('newRoomName').value = "";
+            }
+        };
+
+        window.editRoomName = async (index) => {
+            const oldName = window.rooms[index];
+            const newName = prompt("請輸入新的會議室名稱：", oldName);
+            if (newName && newName.trim() !== "" && newName !== oldName) {
+                const trimmed = newName.trim();
+                window.rooms[index] = trimmed;
+                await window.saveSystemConfig();
+                
+                // 更新該會議室下既有預約紀錄
+                const updates = window.bookings.filter(b => b.room === oldName);
+                for (let b of updates) {
+                    await updateDoc(doc(db, "bookings", b.id), { room: trimmed });
+                }
+            }
+        };
+
+        window.deleteRoom = async (index) => {
+            const roomToDelete = window.rooms[index];
+            if (confirm(`確定要刪除「${roomToDelete}」嗎？`)) {
+                window.rooms.splice(index, 1);
+                await window.saveSystemConfig();
+
+                const toDelete = window.bookings.filter(b => b.room === roomToDelete);
+                for (let b of toDelete) {
+                    await deleteDoc(doc(db, "bookings", b.id));
+                }
+            }
+        };
+
+        window.handleAddUser = async () => {
+            const name = document.getElementById('newUserName').value.trim();
+            if (name && !window.users.some(u => u.name === name)) {
+                window.users.push({ name, role: 'user' });
+                await window.saveSystemConfig();
+                document.getElementById('newUserName').value = "";
+            }
+        };
+
+        window.deleteUser = async (userName) => {
+            window.users = window.users.filter(u => u.name !== userName);
+            await window.saveSystemConfig();
+        };
+    </script>
+
+    <!-- UI 邏輯 script -->
+    <script>
         function updateAuthUI() {
             const userInfo = document.getElementById('userInfo');
             const authBtn = document.getElementById('authBtn');
@@ -206,12 +351,12 @@
             const foundUser = users.find(u => u.name === username);
 
             if (!foundUser) {
-                alert("權限不相符或此使用者名稱不存在，請聯繫管理員新增！");
+                alert("帳號不存在，請聯繫管理員！");
                 return;
             }
 
             currentUser = foundUser;
-            saveData();
+            localStorage.setItem('currentUser', JSON.stringify(currentUser));
             updateAuthUI();
             closeModal('loginModal');
             document.getElementById('loginUsername').value = "";
@@ -220,17 +365,13 @@
 
         function handleLogout() {
             currentUser = null;
-            saveData();
+            localStorage.removeItem('currentUser');
             updateAuthUI();
             renderBookingList();
         }
 
-        // 會議室分頁渲染
         function renderTabs() {
             const tabsContainer = document.getElementById('roomTabs');
-            if (!rooms.includes(activeRoom) && rooms.length > 0) {
-                activeRoom = rooms[0];
-            }
             tabsContainer.innerHTML = rooms.map(room => `
                 <button onclick="switchTab('${room}')" class="px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition ${activeRoom === room ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white text-slate-600 hover:bg-slate-50'}">
                     ${room}
@@ -245,7 +386,6 @@
             renderBookingList();
         }
 
-        // 月曆渲染邏輯
         function renderCalendar() {
             const year = currentDate.getFullYear();
             const month = currentDate.getMonth();
@@ -294,7 +434,6 @@
             renderBookingList();
         }
 
-        // 預約清單渲染
         function renderBookingList() {
             document.getElementById('selectedDateTitle').innerText = selectedDateStr;
             const container = document.getElementById('bookingList');
@@ -322,8 +461,8 @@
                         </div>
                         ${canModify ? `
                             <div class="space-x-1">
-                                <button onclick="openBookingModal('${b.id}')" class="text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 px-2 py-1 rounded">編輯</button>
-                                <button onclick="deleteBooking('${b.id}')" class="text-xs bg-rose-100 hover:bg-rose-200 text-rose-600 px-2 py-1 rounded">刪除</button>
+                                <button onclick="openBookingModal('${b.id}')" class="text-xs bg-slate-200 text-slate-700 px-2 py-1 rounded">編輯</button>
+                                <button onclick="deleteBooking('${b.id}')" class="text-xs bg-rose-100 text-rose-600 px-2 py-1 rounded">刪除</button>
                             </div>
                         ` : ''}
                     </div>
@@ -331,7 +470,6 @@
             }).join('');
         }
 
-        // 新增 / 編輯預約
         function openBookingModal(bookingId = null) {
             if (!currentUser) {
                 alert("請先登入系統才能進行預約！");
@@ -357,148 +495,25 @@
             openModal('bookingModal');
         }
 
-        function handleBookingSubmit(e) {
-            e.preventDefault();
-            const id = document.getElementById('bookingId').value;
-            const title = document.getElementById('meetingTitle').value;
-            const startTime = document.getElementById('startTime').value;
-            const endTime = document.getElementById('endTime').value;
-
-            if (startTime >= endTime) {
-                alert("結束時間必須晚於開始時間！");
-                return;
-            }
-
-            const isConflict = bookings.some(b => {
-                if (b.room !== activeRoom || b.date !== selectedDateStr) return false;
-                if (id && b.id === id) return false;
-
-                return (startTime < b.endTime) && (endTime > b.startTime);
-            });
-
-            if (isConflict) {
-                alert("⚠️ 預約失敗：該時段與現有預約重疊，請選擇其他時間！");
-                return;
-            }
-
-            if (id) {
-                const index = bookings.findIndex(b => b.id === id);
-                bookings[index] = { ...bookings[index], title, startTime, endTime };
-            } else {
-                bookings.push({
-                    id: Date.now().toString(),
-                    room: activeRoom,
-                    date: selectedDateStr,
-                    title,
-                    user: currentUser.name,
-                    startTime,
-                    endTime
-                });
-            }
-
-            saveData();
-            renderCalendar();
-            renderBookingList();
-            closeModal('bookingModal');
-        }
-
-        function deleteBooking(id) {
-            if (confirm("確定要刪除這筆預約嗎？")) {
-                bookings = bookings.filter(b => b.id !== id);
-                saveData();
-                renderCalendar();
-                renderBookingList();
-            }
-        }
-
-        // 管理員：會議室管理邏輯（新增、修改名稱、刪除）
-        function openRoomMgmtModal() {
-            renderRoomList();
-            openModal('roomMgmtModal');
-        }
-
+        function openRoomMgmtModal() { renderRoomList(); openModal('roomMgmtModal'); }
         function renderRoomList() {
             const list = document.getElementById('roomList');
+            if (!list) return;
             list.innerHTML = rooms.map((room, index) => `
                 <div class="flex justify-between items-center bg-slate-50 p-2 rounded-lg border border-slate-200">
                     <span class="text-sm font-medium text-slate-700">${room}</span>
                     <div class="space-x-1">
-                        <button onclick="editRoomName(${index})" class="text-xs bg-indigo-50 text-indigo-600 px-2 py-1 rounded font-medium hover:bg-indigo-100">修改名稱</button>
-                        ${rooms.length > 1 ? `<button onclick="deleteRoom(${index})" class="text-xs bg-rose-50 text-rose-600 px-2 py-1 rounded font-medium hover:bg-rose-100">刪除</button>` : ''}
+                        <button onclick="editRoomName(${index})" class="text-xs bg-indigo-50 text-indigo-600 px-2 py-1 rounded font-medium">修改</button>
+                        ${rooms.length > 1 ? `<button onclick="deleteRoom(${index})" class="text-xs bg-rose-50 text-rose-600 px-2 py-1 rounded font-medium">刪除</button>` : ''}
                     </div>
                 </div>
             `).join('');
         }
 
-        function handleAddRoom() {
-            const roomName = document.getElementById('newRoomName').value.trim();
-            if (roomName && !rooms.includes(roomName)) {
-                rooms.push(roomName);
-                activeRoom = roomName;
-                saveData();
-                renderTabs();
-                renderRoomList();
-                renderCalendar();
-                renderBookingList();
-                document.getElementById('newRoomName').value = "";
-            } else if (rooms.includes(roomName)) {
-                alert("會議室名稱已存在！");
-            }
-        }
-
-        function editRoomName(index) {
-            const oldName = rooms[index];
-            const newName = prompt("請輸入新的會議室名稱：", oldName);
-
-            if (newName && newName.trim() !== "" && newName !== oldName) {
-                const trimmedName = newName.trim();
-                if (rooms.includes(trimmedName)) {
-                    alert("已有相同名稱的會議室！");
-                    return;
-                }
-
-                // 更新會議室名稱
-                rooms[index] = trimmedName;
-
-                // 同步更新已存在預約資料中的會議室名稱
-                bookings = bookings.map(b => b.room === oldName ? { ...b, room: trimmedName } : b);
-
-                if (activeRoom === oldName) activeRoom = trimmedName;
-
-                saveData();
-                renderTabs();
-                renderRoomList();
-                renderCalendar();
-                renderBookingList();
-            }
-        }
-
-        function deleteRoom(index) {
-            const roomToDelete = rooms[index];
-            if (confirm(`確定要刪除「${roomToDelete}」嗎？這將會同步刪除該會議室的所有預約紀錄！`)) {
-                rooms.splice(index, 1);
-                bookings = bookings.filter(b => b.room !== roomToDelete);
-
-                if (activeRoom === roomToDelete) {
-                    activeRoom = rooms[0] || "";
-                }
-
-                saveData();
-                renderTabs();
-                renderRoomList();
-                renderCalendar();
-                renderBookingList();
-            }
-        }
-
-        // 管理員：帳號管理
-        function openUserMgmtModal() {
-            renderUserList();
-            openModal('userMgmtModal');
-        }
-
+        function openUserMgmtModal() { renderUserList(); openModal('userMgmtModal'); }
         function renderUserList() {
             const list = document.getElementById('userList');
+            if (!list) return;
             list.innerHTML = users.map(u => `
                 <div class="flex justify-between items-center text-sm bg-slate-50 p-2 rounded">
                     <span>${u.name} <span class="text-xs text-slate-400">(${u.role})</span></span>
@@ -507,23 +522,6 @@
             `).join('');
         }
 
-        function handleAddUser() {
-            const name = document.getElementById('newUserName').value.trim();
-            if (name && !users.some(u => u.name === name)) {
-                users.push({ name, role: 'user' });
-                saveData();
-                renderUserList();
-                document.getElementById('newUserName').value = "";
-            }
-        }
-
-        function deleteUser(userName) {
-            users = users.filter(u => u.name !== userName);
-            saveData();
-            renderUserList();
-        }
-
-        // Modal 控制輔助函式
         function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
         function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
     </script>
