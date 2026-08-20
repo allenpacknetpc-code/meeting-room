@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>谷源會議室預約系統 </title>
+    <title>會議室預約系統 (雲端同步與週期預約版)</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -81,7 +81,7 @@
         </div>
     </div>
 
-    <!-- 預約 Modal -->
+    <!-- 預約 Modal (含週期重複選單) -->
     <div id="bookingModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden flex items-center justify-center p-4 z-50">
         <div class="bg-white w-full max-w-xs rounded-2xl p-6 shadow-xl">
             <h3 class="text-lg font-bold mb-4" id="bookingModalTitle">新增預約</h3>
@@ -95,7 +95,7 @@
                     <label class="block text-xs text-slate-500 font-bold mb-1">預約人</label>
                     <input type="text" id="bookingUser" readonly class="w-full bg-slate-100 border rounded-lg p-2 text-sm text-slate-600">
                 </div>
-                <div class="grid grid-cols-2 gap-2 mb-4">
+                <div class="grid grid-cols-2 gap-2 mb-3">
                     <div>
                         <label class="block text-xs text-slate-500 font-bold mb-1">開始時間</label>
                         <input type="time" id="startTime" required class="w-full border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500">
@@ -105,6 +105,18 @@
                         <input type="time" id="endTime" required class="w-full border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500">
                     </div>
                 </div>
+
+                <!-- 週期預約選單 -->
+                <div class="mb-4" id="repeatGroup">
+                    <label class="block text-xs text-slate-500 font-bold mb-1">重複預約</label>
+                    <select id="repeatType" class="w-full border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                        <option value="none">單次預約（不重複）</option>
+                        <option value="weekly_4">每週重複（持續 4 週）</option>
+                        <option value="weekly_8">每週重複（持續 8 週）</option>
+                        <option value="weekly_12">每週重複（持續 12 週）</option>
+                    </select>
+                </div>
+
                 <button type="submit" class="w-full bg-indigo-600 text-white py-2 rounded-lg text-sm font-medium mb-2">確認送出</button>
                 <button type="button" onclick="closeModal('bookingModal')" class="w-full bg-slate-100 text-slate-600 py-2 rounded-lg text-sm font-medium">取消</button>
             </form>
@@ -137,15 +149,15 @@
         </div>
     </div>
 
-    <!-- Firebase SDK (v9/v10 Modular via CDN) -->
+    <!-- Firebase SDK (v10 Modular via CDN) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { 
             getFirestore, doc, setDoc, getDoc, onSnapshot, collection, addDoc, updateDoc, deleteDoc 
         } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-        // ⚠️ 請替換為您的 Firebase 專案設定值
-        const firebaseConfig = {
+        // ⚠️ 請填入您 Firebase 專案的真實設定值
+const firebaseConfig = {
   apiKey: "AIzaSyAXRJdvnXGB7r2RDG4CritcdvwzlEV8vsY",
   authDomain: "meeting-room-app-f612c.firebaseapp.com",
   projectId: "meeting-room-app-f612c",
@@ -168,14 +180,14 @@
         window.currentDate = new Date();
         window.selectedDateStr = new Date().toISOString().split('T')[0];
 
-        // 雲端資料監聽（即時同步核心）
+        // 監聽雲端資料
         window.addEventListener('DOMContentLoaded', () => {
             initSystemData();
             listenToData();
             updateAuthUI();
         });
 
-        // 初始化預設資料（若雲端完全沒資料時）
+        // 初始化預設資料（若是第一次開啟）
         async function initSystemData() {
             const configRef = doc(db, "system", "config");
             const configSnap = await getDoc(configRef);
@@ -191,9 +203,8 @@
             }
         }
 
-        // 即時聽取雲端資料變更
+        // 即時資料流（全方位同步）
         function listenToData() {
-            // 聽取系統設定 (會議室/使用者)
             onSnapshot(doc(db, "system", "config"), (docSnap) => {
                 if (docSnap.exists()) {
                     const data = docSnap.data();
@@ -210,7 +221,6 @@
                 }
             });
 
-            // 即時聽取預約列表
             onSnapshot(collection(db, "bookings"), (snapshot) => {
                 window.bookings = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 renderCalendar();
@@ -218,7 +228,7 @@
             });
         }
 
-        // 全域掛載 Firebase 操作 Function
+        // 掛載至全域的方法
         window.saveSystemConfig = async () => {
             await setDoc(doc(db, "system", "config"), {
                 rooms: window.rooms,
@@ -226,42 +236,71 @@
             });
         };
 
+        // 處理預約送出 (含重複週期計算)
         window.handleBookingSubmit = async (e) => {
             e.preventDefault();
             const id = document.getElementById('bookingId').value;
             const title = document.getElementById('meetingTitle').value;
             const startTime = document.getElementById('startTime').value;
             const endTime = document.getElementById('endTime').value;
+            const repeatType = document.getElementById('repeatType').value;
 
             if (startTime >= endTime) {
                 alert("結束時間必須晚於開始時間！");
                 return;
             }
 
-            const isConflict = window.bookings.some(b => {
-                if (b.room !== window.activeRoom || b.date !== window.selectedDateStr) return false;
-                if (id && b.id === id) return false;
-                return (startTime < b.endTime) && (endTime > b.startTime);
-            });
+            // 計算預約日期
+            const targetDates = [];
+            const baseDateParts = window.selectedDateStr.split('-');
+            const baseDate = new Date(baseDateParts[0], baseDateParts[1] - 1, baseDateParts[2]);
 
-            if (isConflict) {
-                alert("⚠️ 預約失敗：該時段與現有預約重疊！");
+            if (!id && repeatType !== 'none') {
+                const weeks = parseInt(repeatType.split('_')[1]);
+                for (let i = 0; i < weeks; i++) {
+                    const d = new Date(baseDate);
+                    d.setDate(d.getDate() + (i * 7));
+                    const y = d.getFullYear();
+                    const m = String(d.getMonth() + 1).padStart(2, '0');
+                    const day = String(d.getDate()).padStart(2, '0');
+                    targetDates.push(`${y}-${m}-${day}`);
+                }
+            } else {
+                targetDates.push(window.selectedDateStr);
+            }
+
+            // 衝突檢查
+            let conflictDates = [];
+            for (let dateStr of targetDates) {
+                const isConflict = window.bookings.some(b => {
+                    if (b.room !== window.activeRoom || b.date !== dateStr) return false;
+                    if (id && b.id === id) return false;
+                    return (startTime < b.endTime) && (endTime > b.startTime);
+                });
+                if (isConflict) conflictDates.push(dateStr);
+            }
+
+            if (conflictDates.length > 0) {
+                alert(`⚠️ 預約失敗！以下日期時段有衝突：\n${conflictDates.join('\n')}`);
                 return;
             }
 
-            const bookingData = {
-                room: window.activeRoom,
-                date: window.selectedDateStr,
-                title,
-                user: window.currentUser.name,
-                startTime,
-                endTime
-            };
+            // 批次寫入 Firebase
+            for (let dateStr of targetDates) {
+                const bookingData = {
+                    room: window.activeRoom,
+                    date: dateStr,
+                    title,
+                    user: window.currentUser.name,
+                    startTime,
+                    endTime
+                };
 
-            if (id) {
-                await updateDoc(doc(db, "bookings", id), bookingData);
-            } else {
-                await addDoc(collection(db, "bookings"), bookingData);
+                if (id) {
+                    await updateDoc(doc(db, "bookings", id), bookingData);
+                } else {
+                    await addDoc(collection(db, "bookings"), bookingData);
+                }
             }
 
             closeModal('bookingModal');
@@ -290,7 +329,6 @@
                 window.rooms[index] = trimmed;
                 await window.saveSystemConfig();
                 
-                // 更新該會議室下既有預約紀錄
                 const updates = window.bookings.filter(b => b.room === oldName);
                 for (let b of updates) {
                     await updateDoc(doc(db, "bookings", b.id), { room: trimmed });
@@ -326,7 +364,7 @@
         };
     </script>
 
-    <!-- UI 邏輯 script -->
+    <!-- 介面呈現控制腳本 -->
     <script>
         function updateAuthUI() {
             const userInfo = document.getElementById('userInfo');
@@ -478,6 +516,7 @@
             }
 
             document.getElementById('bookingUser').value = currentUser.name;
+            const repeatGroup = document.getElementById('repeatGroup');
 
             if (bookingId) {
                 const target = bookings.find(b => b.id === bookingId);
@@ -486,11 +525,13 @@
                 document.getElementById('meetingTitle').value = target.title;
                 document.getElementById('startTime').value = target.startTime;
                 document.getElementById('endTime').value = target.endTime;
+                if (repeatGroup) repeatGroup.classList.add('hidden');
             } else {
                 document.getElementById('bookingModalTitle').innerText = "新增預約";
                 document.getElementById('bookingForm').reset();
                 document.getElementById('bookingId').value = "";
                 document.getElementById('bookingUser').value = currentUser.name;
+                if (repeatGroup) repeatGroup.classList.remove('hidden');
             }
             openModal('bookingModal');
         }
